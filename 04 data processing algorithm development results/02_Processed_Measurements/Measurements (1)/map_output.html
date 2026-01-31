@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Google Maps Example</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB4uWTIc2WFjNsypqSLD0vJFAi2q11Ifvk"></script>
+  <script>
+    function initMap() {
+      var map = new google.maps.Map(document.getElementById('map'), {
+        zoom: 10,
+        center: {lat: 37.7749, lng: -122.4194} // San Francisco, CA
+      });
+
+      
+      var marker = new google.maps.Marker({
+        position: {lat: 37.7749, lng: -122.4194},
+        map: map,
+        title: 'Marker'
+      });
+      
+      var marker = new google.maps.Marker({
+        position: {lat: 37.3382, lng: -121.8863},
+        map: map,
+        title: 'Marker'
+      });
+      
+      var marker = new google.maps.Marker({
+        position: {lat: 34.0522, lng: -118.2437},
+        map: map,
+        title: 'Marker'
+      });
+      
+    }
+  </script>
+</head>
+<body onload="initMap()">
+  <div id="map" style="height: 100%;"></div>
+</body>
+</html>

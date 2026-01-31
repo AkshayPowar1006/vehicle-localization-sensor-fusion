@@ -1,0 +1,207 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Apr 26 15:02:18 2023
+
+@author: Z0168020
+"""
+
+from KF1 import KF
+from kf_functions import convert_to_utm
+
+# Import necessary libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+    
+df = pd.read_csv("../Sort Arduino Data by Time Stamps/megadatabase_linear_traj.csv")
+
+df_piksi_smartphone = df[['TimeStamps','lat_piksi','lon_piksi','lat_smartphone','lon_smartphone']]
+df_piksi_smartphone = df_piksi_smartphone.dropna().reset_index()
+# df_piksi_smartphone.iloc[2,:] just to check if data is there or not you can change value 2 to other values to check
+convert_to_utm(df_piksi_smartphone,'lat_piksi', 'lon_piksi')
+convert_to_utm(df_piksi_smartphone,'lat_smartphone', 'lon_smartphone')
+
+df_piksi_arduino = df[['TimeStamps','lat_piksi','lon_piksi','lat_GPS1','lon_GPS1','lat_GPS2','lon_GPS2','lat_GPS3','lon_GPS3']]
+df_piksi_arduino = df_piksi_arduino.dropna().reset_index()
+# df_piksi_smartphone.iloc[2,:] just to check if data is there or not you can change value 2 to other values to check
+convert_to_utm(df_piksi_arduino,'lat_piksi', 'lon_piksi')
+convert_to_utm(df_piksi_arduino,'lat_GPS1','lon_GPS1')
+convert_to_utm(df_piksi_arduino,'lat_GPS2','lon_GPS2')
+convert_to_utm(df_piksi_arduino,'lat_GPS3','lon_GPS3')
+
+
+
+plt.ion()
+plt.figure(figsize=(10,5))
+num_states = 4
+measu_inputs = 2
+control_inputs = 2
+rad_wheel =  0.055
+
+init_state_ard = np.array([df_piksi_arduino.loc[0,'lat_piksi_utm_easting'], df_piksi_arduino.loc[1,'lon_piksi_utm_northing'], 1, 1]).reshape(num_states,1)
+init_state_smp = np.array([df_piksi_smartphone.loc[0,'lat_piksi_utm_easting'], df_piksi_smartphone.loc[1,'lon_piksi_utm_northing'], 1, 1]).reshape(num_states,1)
+init_cov = np.eye(num_states)
+u = np.array([0.01, 0.01]).reshape(2,1)
+
+process_variance = np.array([[1.5,   0,     0,      0],
+                             [0,  1.5,     0,      0],
+                             [0,     0,  0.15,      0],
+                             [0,     0,     0,   0.15]])
+
+Q = np.eye(num_states).dot(process_variance) 
+
+sigma_measurement_arduino = 1.667
+R_ard = np.eye(measu_inputs).dot(sigma_measurement_arduino)
+
+sigma_measurement_smartphone = 2
+R_smp =  np.eye(measu_inputs).dot(sigma_measurement_smartphone)
+z = np.array([0,0]).reshape(measu_inputs,1)    
+
+
+kf1 = KF(init_state_ard, init_cov, z, u, Q, R_smp)
+
+kf2 = KF(init_state_smp, init_cov, z, u, Q, R_ard)
+
+time_step = 1
+total_timesteps = max(len(df_piksi_smartphone), len(df_piksi_arduino))
+measurement_rate = 1
+
+mean_state_estimate_1 = np.zeros((num_states, 1, len(df_piksi_smartphone)))
+mean_state_estimate_2 = np.zeros((num_states, 1, len(df_piksi_arduino)))
+true_mean_vehicle_1 = np.zeros(( measu_inputs, 1, len(df_piksi_smartphone)))
+true_mean_vehicle_2 = np.zeros(( measu_inputs, 1, len(df_piksi_arduino)))
+
+true_mean_vehicle_1[:,:,0] = np.array([[df_piksi_smartphone.loc[0,'lat_piksi_utm_easting']],
+                            [df_piksi_smartphone.loc[0,'lon_piksi_utm_northing']]])
+
+true_mean_vehicle_2[:,:,0] = np.array([[df_piksi_arduino.loc[0,'lat_piksi_utm_easting']],
+                            [df_piksi_arduino.loc[0,'lon_piksi_utm_northing']]])
+
+
+updatesteps1 = []
+updatesteps2 = []
+mean_after_prediction_1 = np.zeros((num_states, 1, len(df_piksi_smartphone)))
+mean_after_prediction_2 = np.zeros((num_states, 1, len(df_piksi_arduino)))   
+    
+
+for step in range(total_timesteps):
+          
+    if step >0:
+
+        # True mean state at time t = step
+        true_mean_vehicle_1[:,:,step] = np.array([[df_piksi_smartphone.loc[step,'lat_piksi_utm_easting']],
+                                    [df_piksi_smartphone.loc[step,'lon_piksi_utm_northing']]])
+        if step<len(df_piksi_arduino):
+            true_mean_vehicle_2[:,:,step] = np.array([[df_piksi_arduino.loc[step,'lat_piksi_utm_easting']],
+                                    [df_piksi_arduino.loc[step,'lon_piksi_utm_northing']]])
+    
+        kf1.predict(dt=time_step)
+        kf2.predict(dt=time_step)
+        
+        mean_after_prediction_1[:,:,step] = kf1.mean
+        if step<len(df_piksi_arduino):
+            mean_after_prediction_2[:,:,step] = kf2.mean
+        
+        if step != 0 and step % measurement_rate == 0:
+            
+            updatesteps1.append(step)
+            if step<len(df_piksi_arduino):
+                updatesteps2.append(step)
+            
+            kf1.update(meas_value=([[df_piksi_smartphone.loc[step,'lat_smartphone_utm_easting']],
+                                    [df_piksi_smartphone.loc[step,'lon_smartphone_utm_northing']]]))
+            #if step<len(df_piksi_arduino.loc[:,'lat_GPS1_utm_easting']):
+            if step<len(df_piksi_arduino):
+                kf2.update(meas_value=([[df_piksi_arduino.loc[step,'lat_GPS1_utm_easting']],
+                                    [df_piksi_arduino.loc[step,'lon_GPS1_utm_northing']]]))
+            #if step<len(df_piksi_arduino.loc[:,'lat_GPS2_utm_easting']):
+            if step<len(df_piksi_arduino):
+                kf2.update(meas_value=([[df_piksi_arduino.loc[step,'lat_GPS2_utm_easting']],
+                                    [df_piksi_arduino.loc[step,'lon_GPS2_utm_northing']]]))
+            #if step<len(df_piksi_arduino.loc[:,'lat_GPS3_utm_easting']):
+            if step<len(df_piksi_arduino):
+                kf2.update(meas_value=([[df_piksi_arduino.loc[step,'lat_GPS3_utm_easting']],
+                                    [df_piksi_arduino.loc[step,'lon_GPS3_utm_northing']]]))
+
+     
+    mean_state_estimate_1[:,:,step] = kf1.mean
+    if step<len(df_piksi_arduino):
+        mean_state_estimate_2[:,:,step] = kf2.mean
+
+mse_pred_1 = np.square(
+                np.subtract(np.sqrt(np.square(true_mean_vehicle_1[0,:,updatesteps1])+ np.square(true_mean_vehicle_1[1,:,updatesteps1])), 
+                            np.sqrt(np.square(mean_after_prediction_1[0,:,updatesteps1])+ np.square(mean_after_prediction_1[1,:,updatesteps1]))
+                )).mean()
+
+rmse_pred_1 = np.sqrt(mse_pred_1)
+
+mse_pred_2 = np.square(
+                np.subtract(np.sqrt(np.square(true_mean_vehicle_2[0,:,updatesteps2])+ np.square(true_mean_vehicle_2[1,:,updatesteps2])), 
+                            np.sqrt(np.square(mean_after_prediction_2[0,:,updatesteps2])+ np.square(mean_after_prediction_2[1,:,updatesteps2]))
+                )).mean()
+
+rmse_pred_2 = np.sqrt(mse_pred_2)
+
+
+mse_1 = np.square(
+                np.subtract(np.sqrt(np.square(true_mean_vehicle_1[0,:,updatesteps1])+ np.square(true_mean_vehicle_1[1,:,updatesteps1])), 
+                            np.sqrt(np.square(mean_state_estimate_1[0,:,updatesteps1])+ np.square(mean_state_estimate_1[1,:,updatesteps1]))
+                )).mean()
+rmse_1 = np.sqrt(mse_1)
+
+mse_2 = np.square(
+                np.subtract(np.sqrt(np.square(true_mean_vehicle_2[0,:,updatesteps2])+ np.square(true_mean_vehicle_2[1,:,updatesteps2])), 
+                            np.sqrt(np.square(mean_state_estimate_2[0,:,updatesteps2])+ np.square(mean_state_estimate_2[1,:,updatesteps2]))
+                )).mean()
+rmse_2 = np.sqrt(mse_2)
+
+
+
+# Create a figure with two subplots
+fig, ((ax1, ax3)) = plt.subplots(1, 2, figsize=(10, 5))
+
+ax1.set_title('Position')
+ax1.set_xlabel('Time (in s)')
+ax1.set_ylabel('X-Y Position (in m)')
+ax1.plot(mean_state_estimate_1[0,0,:], mean_state_estimate_1[1,0,:], color='indigo', linestyle='--', label = 'Smartphone Pos estimate')
+ax1.plot(mean_state_estimate_2[0,0,:], mean_state_estimate_2[1,0,:], color='salmon', linestyle='--', label = 'Smartphone Pos estimate')
+ax1.plot(df_piksi_smartphone.loc[:,'lat_piksi_utm_easting'], df_piksi_smartphone.loc[:,'lon_piksi_utm_northing'], 'k--', label = 'Piksi Pos')
+ax1.legend(loc = 'upper right')
+
+ax3.set_title('Velocity')
+ax3.set_xlabel('Time (in s)')
+ax3.set_ylabel('X-Y Velocity (in m/s)')
+ax3.plot(mean_state_estimate_1[2,0,:], mean_state_estimate_1[3,0,:], color='indigo', linestyle='--', label = 'Smartphone Vel estimate')
+ax3.plot(mean_state_estimate_2[2,0,:], mean_state_estimate_2[3,0,:], color='salmon', linestyle='--', label = 'Smartphone Vel estimate')
+ax3.legend(loc = 'upper right')
+
+# Create a figure with one subplot for rmseplot
+fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5))
+
+# Create a list of sensor names and RMSE values
+labels = ['Prediction', 'Correction']
+rmse_values = np.array([[rmse_pred_1, rmse_pred_2], [rmse_1, rmse_2]])
+
+# Transpose the rmse_values array
+rmse_values = rmse_values.T
+
+# Plot the RMSE values
+x = np.arange(len(labels))  # x-coordinates for the bars
+width = 0.35  # width of the bars
+colors = ['tab:blue', 'tab:orange']  # colors for the bars
+sub_labels = ['Smartphone', 'Arduino Multi GNSS']
+for i in range(rmse_values.shape[1]):
+    ax2.bar(x + i * width, rmse_values[:, i], width, label=sub_labels[i], color=colors[i])
+    for j, val in enumerate(rmse_values[:, i]):
+       ax2.text(x[j] + i * width, val, "{:.4f}".format(val), ha='center', va='top')
+
+    
+ax2.set_title('RMSE values Position X-Y')
+ax2.set_xlabel('Mean States', fontsize=14)
+ax2.set_ylabel('RMSE (in meters)', fontsize=14)
+ax2.set_xticks(x+width/2)
+ax2.set_xticklabels(labels)
+ax2.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
+
+fig2.tight_layout()
+plt.show()
