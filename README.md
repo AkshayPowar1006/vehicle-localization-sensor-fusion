@@ -17,6 +17,7 @@ The primary objective of this research is to:
 An experimental setup was developed using multiple GNSS localization systems mounted on a vehicle. The collected data was processed using state estimation algorithms, including:
 - Kalman Filter (KF)
 - Extended Kalman Filter (EKF)
+- Unscented Kalman Filter (UKF)
 
 These algorithms fuse measurements from multiple GNSS sensors and apply a constant-acceleration motion model to estimate the vehicle’s state. The EKF was additionally used to explore the feasibility of estimating orientation alongside position.
 
